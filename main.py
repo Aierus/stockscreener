@@ -11,11 +11,11 @@ import os
 
 # Variables
 spy = si.tickers_sp500()
-# naz = si.tickers_nasdaq()
-# dow = si.tickers_dow()
-# naz_name = '^IXIC'   #NASDAQ
+naz = si.tickers_nasdaq()
+dow = si.tickers_dow()
+naz_name = '^IXIC'   #NASDAQ
 spy_name = '^GSPC' #SPX
-# dow_name = '^DJI'    #DOW
+dow_name = '^DJI'    #DOW
 # indicies = [spy, naz, dow]
 # index_name = [spy_name, naz_name, dow_name]
 indicies = [spy]
@@ -27,14 +27,15 @@ yester_date = datetime.datetime.now() - datetime.timedelta(days=2)
 end_date = datetime.date.today()
 exportList = pd.DataFrame(columns=['Stock', 'Volume', 'Average Volume', 'Weighted Volume', 'Percent_Deviation', 'Weighted_Percent_Deviation'])
 
-spy_data = pdr.get_data_yahoo('SPY', start_date, end_date)
-spy_data.to_csv('SPY.csv')
+spy_data = yf.download('SPY', period="1y")
+os.makedirs('csv_output', exist_ok=True)
+spy_data.to_csv(f'csv_output/SPY.csv')
 
-spy_yester_data = pdr.get_data_yahoo('SPY', yester_date - datetime.timedelta(days=1), end_date)
-spy_yester_data.to_csv('SPY_YESTERDAY.csv')
+# spy_yester_data = pdr.get_data_yahoo('SPY', yester_date - datetime.timedelta(days=1), end_date)
+# spy_yester_data.to_csv('SPY_YESTERDAY.csv')
 
-spy_today_data = pdr.get_data_yahoo('SPY', yester_date, end_date)
-spy_today_data.to_csv('SPY_TODAY.csv')
+# spy_today_data = pdr.get_data_yahoo('SPY', yester_date, end_date)
+# spy_today_data.to_csv('SPY_TODAY.csv')
 
 # spooz_list = list(spooz_today_data)
 # print(spooz_list)
@@ -46,34 +47,40 @@ spy_today_data.to_csv('SPY_TODAY.csv')
 # spooz_data.columns.values.tolist()
 # for i in range len(spooz_data.columns):
 #   spooz_volume = spooz_today.loc[spooz_today.index, 'Volume'].iat[i]
+
 tickers = []
-total_spy_vol = 0
+total_spy_vol = spy_data['Volume'].sum()
+average_spy_vol = total_spy_vol / spy_data.shape[0]
 j = 0
 # Write data to CSV
 for i in range(len(index_name)):
   if i == 0:
-    rows = len(spy_data)
-    for j in range(rows):
-      total_spy_vol += spy_data.loc[spy_data.index, 'Volume'].iat[j]
-      average_spy_vol = total_spy_vol / rows
+    rows = spy_data.shape[0]
 
   for ticker in indicies[i]:
-    df = pdr.get_data_yahoo(ticker, start_date, end_date)
-    rows = len(df.index)
+    df = yf.download(ticker, start_date, end_date)
+    rows = df.shape[0]
     tickers.append(ticker)
 
-    weighted_vol = []
-    for i in range(rows):
-      weighted_vol.append(df.loc[df.index, 'Volume'].iat[i])
-      weighted_vol[i] = round(weighted_vol[i] / (spy_data.loc[spy_data.index, 'Volume'].iat[i]), 10)
-    df['SPY Weighted Volume'] = weighted_vol
+    # weighted_vol = []
+    # for i in range(rows):
+    #   weighted_vol.append(df.loc[df.index, 'Volume'].iat[i])
+    #   weighted_vol[i] = round(weighted_vol[i] / (spy_data.loc[spy_data.index, 'Volume'].iat[i]), 10)
+    # df['SPY Weighted Volume'] = weighted_vol
+    # print(df['SPY Weighted Volume'])
+
+    df['SPY Weighted Volume'] = round(df['Volume'] / spy_data['Volume'], 10)
+    # print(df['SPY Weighted Volume'])
 
     # Create a 365 day average volume
-    total_vol = 0
-    for i in range(rows):
-      total_vol += df.loc[df.index, 'Volume'].iat[i]
+    # total_vol = 0
+    total_vol = df['Volume'].sum()
     average_vol = total_vol / rows
-    
+
+    # for i in range(rows):
+    #   total_vol += df.loc[df.index, 'Volume'].iat[i]
+    # average_vol = total_vol / rows
+
     # Check to see if day's volume is 20% greater than previous day
     volume_deviation = []        # Historical Y/N Volume Deviation > 50%
     volume_deviation_values = [] # Historical Volume Deviation Values
@@ -107,17 +114,22 @@ for i in range(len(index_name)):
     df['Volume Deviation Value'] = volume_deviation_values
     df['Weighted Volume Deviation Values'] = w_vol_dev_values
 
-    os.makedirs('csv_output', exist_ok=True)
-    df.to_csv(f'csv_output/{ticker}.csv')
-    print(f'Writing {ticker} to csv')
+    time_since_mod = time.time() - os.path.getmtime('./csv_output')
+    hours_since_mod = int(time_since_mod) / 3600
+    if (hours_since_mod >= 12):
+      df.to_csv(f'csv_output/{ticker}.csv')
+      print(f'Writing {ticker} to csv')
 
-# Create DataFrame of top 10%
+    # df.to_csv(f'csv_output/{ticker}.csv')
+    # print(f'Writing {ticker} to csv')
+
+# Create DataFrame of top 30%
 vd_df = pd.DataFrame(list(zip(tickers, volume_deviation_values)), columns=['Ticker', 'Percent_Deviation'])
-vd_df['Volume_Deviation_Rating'] = vd_df.Percent_Deviation.rank(pct=True) * 100
-vd_df = vd_df[vd_df.Volume_Deviation_Rating >= vd_df.Volume_Deviation_Rating.quantile(.90)]
-vd_df.to_csv('Top_10_Percent_Volume_Deviation_Today.csv')
-print("##### Top 10%\ of volume deviation stocks written to csv ######")
-""" 
+vd_df['Volume_Deviation_Rating'] = vd_df['Percent_Deviation'].rank(pct=True) * 100
+vd_df = vd_df[vd_df.Volume_Deviation_Rating >= vd_df.Volume_Deviation_Rating.quantile(.70)]
+vd_df.to_csv(f'csv_output/Top_10_Percent_Volume_Deviation_Today.csv')
+print("##### Top 30%\ of volume deviation stocks written to csv ######")
+"""
 vd_stocks = vd_df['Ticker']
 for stock in vd_stocks:
   try:
@@ -150,7 +162,7 @@ for stock in vd_stocks:
 """
 # Sort, Trim, and Export to Excel
 exportList.sort_values(by=['Percent_Deviation'], ascending=True)
-exportList = exportList[exportList.Percent_Deviation >= exportList.Percent_deviation.quantile(.70)]
+exportList = exportList[exportList.Percent_Deviation >= exportList.Percent_Deviation.quantile(.70)]
 print('\n', exportList)
 writer = ExcelWriter("OverallPercentVolumeDeviation.xlsx")
 exportList.to_excel(writer, "Sheet1")
